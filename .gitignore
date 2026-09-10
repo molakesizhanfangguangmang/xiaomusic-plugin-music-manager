@@ -1,0 +1,11 @@
+# 本地私密/临时产物 — 绝不入库
+host.sh
+credentials.yaml
+agent.json
+*.bak
+*.bak_*
+*.log
+*.tmp
+__pycache__/
+*.pyc
+credentials/
