@@ -1,0 +1,193 @@
+/* =========================================================================
+ * 高级播放设置 —— index.html 内联样式不重要，样式都在这
+ * 与 music-manager 工具页同一套幻彩配色（靛蓝 -> 紫 -> 粉），
+ * 但这里是「主页一级入口」的落地页，结构更简单：一张卡片 + 两个开关。
+ * ========================================================================= */
+:root {
+  --ap-bg: #f5f6f8;
+  --ap-card: #ffffff;
+  --ap-line: #e2e5ea;
+  --ap-text: #23262b;
+  --ap-dim: #6b7280;
+  --ap-ok: #15803d;
+  --ap-err: #b91c1c;
+  --ap-radius: 10px;
+
+  --ap-g1: #4dd0e1;
+  --ap-g2: #9575cd;
+  --ap-g3: #f06292;
+  --ap-grad: linear-gradient(120deg, var(--ap-g1), var(--ap-g2) 55%, var(--ap-g3));
+  --ap-glow: 0 2px 12px rgba(149, 117, 205, .22);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  color: var(--ap-text);
+  font: 14px/1.6 -apple-system, "Segoe UI", "Noto Sans CJK SC",
+        "Microsoft YaHei", sans-serif;
+  background:
+    radial-gradient(900px 420px at 8% -8%,  rgba(77, 208, 225, .16), transparent 60%),
+    radial-gradient(760px 380px at 100% 0%, rgba(240, 98, 146, .13), transparent 62%),
+    radial-gradient(820px 460px at 50% 108%, rgba(149, 117, 205, .15), transparent 64%),
+    #f7f8fc;
+  background-attachment: fixed;
+  min-height: 100vh;
+}
+
+.ap-wrap { max-width: 720px; margin: 0 auto; padding: 20px 16px 48px; }
+
+/* ---------- 头部 ---------- */
+.ap-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.ap-head h1 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  background: var(--ap-grad);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.ap-sub {
+  margin: 0 0 18px;
+  color: var(--ap-dim);
+  font-size: 13px;
+}
+
+/* ---------- 卡片 ---------- */
+.ap-card {
+  position: relative;
+  background: var(--ap-card);
+  border: 1px solid var(--ap-line);
+  border-radius: var(--ap-radius);
+  padding: 18px;
+  margin-bottom: 16px;
+  overflow: hidden;
+}
+
+.ap-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: var(--ap-grad);
+}
+
+.ap-card h2 {
+  margin: 0 0 4px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.ap-card .ap-hint {
+  margin: 0 0 14px;
+  color: var(--ap-dim);
+  font-size: 12.5px;
+}
+
+/* ---------- 开关行 ---------- */
+.ap-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 0;
+  border-top: 1px solid var(--ap-line);
+}
+
+.ap-row:first-of-type { border-top: none; }
+
+.ap-row-main { flex: 1; min-width: 0; }
+
+.ap-row-title {
+  font-weight: 500;
+  margin-bottom: 3px;
+}
+
+.ap-row-desc {
+  color: var(--ap-dim);
+  font-size: 12.5px;
+}
+
+.ap-row.ap-disabled {
+  opacity: .45;
+  pointer-events: none;
+}
+
+/* 开关控件 */
+.ap-switch {
+  position: relative;
+  flex: 0 0 auto;
+  width: 46px;
+  height: 26px;
+  margin-top: 2px;
+}
+
+.ap-switch input {
+  position: absolute;
+  opacity: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  cursor: pointer;
+}
+
+.ap-switch .ap-slider {
+  position: absolute;
+  inset: 0;
+  border-radius: 13px;
+  background: #cbd0d8;
+  transition: background .18s;
+  pointer-events: none;
+}
+
+.ap-switch .ap-slider::after {
+  content: '';
+  position: absolute;
+  top: 3px; left: 3px;
+  width: 20px; height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .2);
+  transition: transform .18s;
+}
+
+.ap-switch input:checked + .ap-slider {
+  background: var(--ap-grad);
+  box-shadow: var(--ap-glow);
+}
+
+.ap-switch input:checked + .ap-slider::after {
+  transform: translateX(20px);
+}
+
+/* ---------- 状态条 ---------- */
+.ap-status {
+  padding: 10px 14px;
+  border-radius: var(--ap-radius);
+  font-size: 13px;
+  display: none;
+}
+
+.ap-status.show { display: block; }
+
+.ap-status.ok   { background: #ecfdf3; color: var(--ap-ok);  border: 1px solid #bbf7d0; }
+.ap-status.err  { background: #fef2f2; color: var(--ap-err); border: 1px solid #fecaca; }
+.ap-status.info { background: #eff6ff; color: #1d4ed8;      border: 1px solid #bfdbfe; }
+
+/* ---------- 底部 ---------- */
+.ap-foot {
+  margin-top: 22px;
+  color: var(--ap-dim);
+  font-size: 12px;
+  text-align: center;
+}
+
+.ap-foot a { color: var(--ap-g2); text-decoration: none; }

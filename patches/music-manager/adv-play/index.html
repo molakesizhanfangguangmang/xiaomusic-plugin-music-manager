@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>高级播放设置</title>
+<link rel="stylesheet" href="./tool.css">
+</head>
+<body>
+<div class="ap-wrap">
+
+  <div class="ap-head">
+    <h1>高级播放设置</h1>
+  </div>
+  <p class="ap-sub">控制播放歌单 / 单曲时自动切换的播放模式。改动即时生效，无需重启。</p>
+
+  <div class="ap-card">
+    <h2>播放模式</h2>
+    <p class="ap-hint">两项彼此独立，可只开其一。只在「播放歌单」与「播放单曲」这两个动作发生时联动；手动切模式、语音切模式不受影响。</p>
+
+    <div class="ap-row" id="row-all">
+      <div class="ap-row-main">
+        <div class="ap-row-title">播放歌单时切到列表循环</div>
+        <div class="ap-row-desc">
+          播放歌单时切到列表循环（整单放完从头再来）。
+          当前已是列表循环时不动作。
+        </div>
+      </div>
+      <label class="ap-switch">
+        <input type="checkbox" id="sw-all">
+        <span class="ap-slider"></span>
+      </label>
+    </div>
+
+    <div class="ap-row" id="row-one">
+      <div class="ap-row-main">
+        <div class="ap-row-title">播放单曲时切到单曲循环</div>
+        <div class="ap-row-desc">
+          播放单曲时切到单曲循环（这一首反复播）。
+          语音点歌与面板点歌都算，当前已是单曲循环时不动作。
+        </div>
+      </div>
+      <label class="ap-switch">
+        <input type="checkbox" id="sw-one">
+        <span class="ap-slider"></span>
+      </label>
+    </div>
+  </div>
+
+  <div class="ap-card">
+    <h2>提示音</h2>
+    <p class="ap-hint">只作用于上面两项触发的自动切换，不影响手动或语音切换模式时的播报。</p>
+
+    <div class="ap-row" id="row-silent">
+      <div class="ap-row-main">
+        <div class="ap-row-title">关闭切换模式的提示音</div>
+        <div class="ap-row-desc">
+          自动切换播放模式时音箱会说一句话。打开这一项则不播报这句。
+        </div>
+      </div>
+      <label class="ap-switch">
+        <input type="checkbox" id="sw-silent">
+        <span class="ap-slider"></span>
+      </label>
+    </div>
+  </div>
+
+  <div class="ap-status" id="status"></div>
+
+  <div class="ap-foot">
+    由歌曲管理插件的后端补丁提供 · <a href="/static/xiaomusic_tools/music-manager/index.html">打开歌曲管理</a>
+  </div>
+
+</div>
+<script src="./tool.js"></script>
+</body>
+</html>

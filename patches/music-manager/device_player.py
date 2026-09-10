@@ -253,9 +253,121 @@ class XiaoMusicDevice:
                     self._play_list.sort(key=custom_sort_key)
             self.log.info(f"顺序模式更新，不打乱 {list_name}")
 
+    # ---- cow 补丁：高级播放设置 -------------------------------------------
+    #
+    # 开关存在 <music_mgr_dir>/settings.json（默认 /app/conf/music-mgr/，
+    # 挂载卷，重建容器不丢）：
+    #
+    #   auto_play_type_all bool 播歌单时自动切列表循环
+    #   auto_play_type_one bool 播单曲时自动切单曲循环
+    #   silent_switch_tts  bool 关掉上述自动切换触发的模式提示音
+    #
+    # 两个模式开关彼此独立，可单开。播放侧按 target 类型取对应的键
+    # （见 _auto_switch_play_type）。
+    #
+    # 旧版只有一个合并键 auto_play_type（歌单/单曲一把抓）。为兼容已写入的
+    # 设置文件，读到旧键且新键缺失时，把它当作「两个都开」迁移过来。
+    #
+    # 读取结果做进程内缓存（_adv_settings_cache），避免每次播歌都读盘；
+    # 前端改了设置后调 invalidate_adv_settings() 让它失效重读。
+
+    _ADV_SETTINGS_DEFAULT = {
+        "auto_play_type_all": False,
+        "auto_play_type_one": False,
+        "silent_switch_tts": False,
+    }
+
+    # target 播放模式 -> 控制它的那个开关名
+    _ADV_SWITCH_KEY_BY_TYPE = {
+        PLAY_TYPE_ALL: "auto_play_type_all",
+        PLAY_TYPE_ONE: "auto_play_type_one",
+    }
+
+    def _adv_settings_path(self):
+        """设置文件路径。与专辑记录同目录。"""
+        lib = self.xiaomusic.music_library
+        base = "/app/conf/music-mgr"
+        try:
+            base = lib._music_mgr_dir()
+        except Exception:
+            pass
+        return os.path.join(base, "settings.json")
+
+    def get_adv_settings(self):
+        """读高级播放设置（带进程内缓存）。读失败一律回退默认值。"""
+        cached = getattr(self, "_adv_settings_cache", None)
+        if cached is not None:
+            return cached
+
+        data = dict(self._ADV_SETTINGS_DEFAULT)
+        try:
+            path = self._adv_settings_path()
+            if os.path.exists(path):
+                with open(path, "r", encoding="utf-8") as f:
+                    raw = json.load(f)
+                if isinstance(raw, dict):
+                    for k in data:
+                        if k in raw:
+                            data[k] = bool(raw[k])
+                    # 旧版合并键迁移：auto_play_type=true 视为两个模式开关都开。
+                    # 仅在新键缺省时生效，避免覆盖用户已保存的新设置。
+                    if (
+                        "auto_play_type" in raw
+                        and "auto_play_type_all" not in raw
+                        and "auto_play_type_one" not in raw
+                    ):
+                        legacy = bool(raw["auto_play_type"])
+                        data["auto_play_type_all"] = legacy
+                        data["auto_play_type_one"] = legacy
+                        self.log.info(
+                            f"cow: 迁移旧设置 auto_play_type={legacy} -> "
+                            f"all={legacy} one={legacy}"
+                        )
+        except Exception as e:
+            self.log.warning(f"cow: 读取高级播放设置失败，用默认值: {e}")
+
+        self._adv_settings_cache = data
+        return data
+
+    def invalidate_adv_settings(self):
+        """清掉设置缓存，下次读取时重新读盘。"""
+        self._adv_settings_cache = None
+
+    async def _auto_switch_play_type(self, target_type, reason):
+        """按设置自动切换播放模式（cow 补丁）
+
+        target_type: PLAY_TYPE_ALL（播歌单）或 PLAY_TYPE_ONE（播单曲）
+
+        只在「开关打开」且「当前模式与目标不同」时才切 —— 后者很关键：
+        列表循环重复设成列表循环，set_play_type 内部会强制重洗牌，白白
+        打乱一个已经排好的顺序。相同模式直接返回，什么都不做。
+        """
+        try:
+            settings = self.get_adv_settings()
+            # 按目标模式取对应的开关；不认识的目标类型不处理。
+            key = self._ADV_SWITCH_KEY_BY_TYPE.get(target_type)
+            if not key or not settings.get(key):
+                return
+
+            if self.device.play_type == target_type:
+                return
+
+            silent = bool(settings.get("silent_switch_tts"))
+            self.log.info(
+                f"cow: {reason}，自动切换播放模式 "
+                f"{self.device.play_type} -> {target_type}"
+                f"{'（静音）' if silent else ''}"
+            )
+            await self.set_play_type(target_type, dotts=not silent)
+        except Exception as e:
+            # 自动切模式失败不该影响播放本身，吞掉异常只记日志。
+            self.log.exception(f"cow: 自动切换播放模式失败: {e}")
+
     async def play(self, name="", search_key=""):
         """播放歌曲（外部接口）"""
         self._last_cmd = "play"
+        # cow: 播单曲 → 自动切单曲循环（受高级播放设置控制）
+        await self._auto_switch_play_type(PLAY_TYPE_ONE, "播放单曲")
         return await self._play(name=name, search_key=search_key)
 
     async def _check_and_download_music(self, name, search_key, allow_download):
@@ -1199,6 +1311,13 @@ class XiaoMusicDevice:
         self.device.cur_playlist = list_name
         # 切换歌单，强制重新洗牌
         self.update_playlist(force_reshuffle=True)
+
+        # cow: 播歌单 → 自动切列表循环（受高级播放设置控制）。
+        #
+        # 放在 update_playlist 之后、选曲之前：模式要先定下来，后面的
+        # 选曲与定时器才按正确的模式算。若当前已是列表循环则什么也不做
+        # （见 _auto_switch_play_type 的说明）。
+        await self._auto_switch_play_type(PLAY_TYPE_ALL, f"播放歌单【{list_name}】")
 
         # cow: 修复「播放歌单X」误播/误下载。
         #

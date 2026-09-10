@@ -2,19 +2,22 @@
 # =============================================================================
 # unpatch_music_manager.sh — 回滚「歌曲管理」后端补丁
 #
-# 把容器里的四个文件还原：
+# 还原内容：
 #   /app/xiaomusic/music_library.py
 #   /app/xiaomusic/api/routers/music.py
 #   /app/xiaomusic/device_player.py
 #   /app/xiaomusic/xiaomusic.py
+#   /app/xiaomusic/static/default/index.html   （删掉追加进来的注入行）
+#   并删除 /app/xiaomusic/static/xiaomusic_tools/adv-play/ 与 entry/adv-play-entry.js
 #
 # 还原来源优先级：
 #   1) 本目录下最近的 *.bak_<时间戳> 备份（patch_music_manager.sh 留下的）
 #   2) 没有备份时，从镜像原版恢复（docker run --rm 同镜像 cat 出来）
 #
-# 【注意】还原会一并丢掉 duration-refresh 插件的改动（共用同一批文件）——
-#   本补丁的基线含 duration-refresh，回滚等于退回到打本补丁之前的状态。
-#   若还要用 duration-refresh，回滚后需重打它的 patch_duration.sh。
+# 主页 index.html 若没有备份：不整文件覆盖，只把标记行删掉（保守做法，
+#   避免用旧版本覆盖掉用户/其它插件在上面的改动）。
+#
+# 【注意】还原会一并丢掉 duration-refresh 插件的改动（共用同一批文件）。
 #
 # 幂等：重复执行结果一致。执行前同样会先备份当前文件。
 #
@@ -32,6 +35,11 @@ readonly CONT_MUSIC_LIB="$CONT_APP/music_library.py"
 readonly CONT_MUSIC_ROUTER="$CONT_APP/api/routers/music.py"
 readonly CONT_DEVICE_PLAYER="$CONT_APP/device_player.py"
 readonly CONT_XIAOMUSIC="$CONT_APP/xiaomusic.py"
+readonly CONT_INDEX="$CONT_APP/static/default/index.html"
+readonly CONT_ADV_DIR="$CONT_APP/static/xiaomusic_tools/adv-play"
+readonly CONT_ENTRY_JS="$CONT_APP/static/xiaomusic_tools/entry/adv-play-entry.js"
+
+readonly INDEX_MARK='advplay_entry'
 
 readonly PKG_DIR="$(cd "$(dirname "$0")" && pwd)"
 
@@ -48,7 +56,7 @@ while [ $# -gt 0 ]; do
     -c|--container) CONTAINER="$2"; shift 2 ;;
     --dry-run)      DRY_RUN=1; shift ;;
     -f|--force)     FORCE=1; shift ;;
-    -h|--help)      sed -n '2,30p' "$0"; exit 0 ;;
+    -h|--help)      sed -n '2,32p' "$0"; exit 0 ;;
     *) err "未知参数: $1"; exit 2 ;;
   esac
 done
@@ -59,7 +67,6 @@ docker ps --format '{{.Names}}' | grep -qx "$CONTAINER" || {
 
 # --- 找最近的备份 -------------------------------------------------------------
 find_backup() {
-  # $1 = 文件名（如 music_library.py）
   ls -1 "$PKG_DIR/$1".bak_* 2>/dev/null | sort | tail -n 1
 }
 
@@ -68,6 +75,7 @@ declare -a PAIRS=(
   "$CONT_MUSIC_ROUTER:music.py"
   "$CONT_DEVICE_PLAYER:device_player.py"
   "$CONT_XIAOMUSIC:xiaomusic.py"
+  "$CONT_INDEX:index.html"
 )
 
 echo
@@ -84,6 +92,10 @@ for pair in "${PAIRS[@]}"; do
     srcs+=("")
   fi
 done
+echo "    另删除 $CONT_ADV_DIR/ 与 $CONT_ENTRY_JS"
+if [ ! -f "$(find_backup index.html)" ]; then
+  echo "    主页无备份，将只删除标记行（不整文件覆盖）"
+fi
 echo
 
 if [ "$DRY_RUN" -eq 1 ]; then
@@ -111,7 +123,7 @@ for pair in "${PAIRS[@]}"; do
     || warn "  $cont 备份失败（继续）"
 done
 
-# --- 还原 ---------------------------------------------------------------------
+# --- 还原 .py 与主页 ----------------------------------------------------------
 IMAGE="$(docker inspect -f '{{.Config.Image}}' "$CONTAINER" 2>/dev/null)"
 [ -n "$IMAGE" ] || { err "取不到容器镜像名"; exit 4; }
 
@@ -122,12 +134,28 @@ idx=0
 for pair in "${PAIRS[@]}"; do
   cont="${pair%%:*}"; name="${pair##*:}"
   b="${srcs[$idx]}"; idx=$((idx+1))
+
+  # 主页和 .py 的处理分开：主页在无备份时只删标记行，不做整文件覆盖
+  if [ "$name" = "index.html" ] && [ -z "$b" ]; then
+    info "主页无备份：只删除标记行"
+    if docker exec "$CONTAINER" grep -q "$INDEX_MARK" "$CONT_INDEX" >/dev/null 2>&1; then
+      if docker exec "$CONTAINER" sh -c \
+        "grep -v '$INDEX_MARK' '$CONT_INDEX' > '$CONT_INDEX.tmp' && mv '$CONT_INDEX.tmp' '$CONT_INDEX'"; then
+        info "  标记行已删除。"
+      else
+        warn "  标记行删除失败，请手动检查 $CONT_INDEX"
+      fi
+    else
+      info "  主页本就没有标记行，跳过。"
+    fi
+    continue
+  fi
+
   if [ -n "$b" ]; then
     docker cp "$b" "$CONTAINER:$cont" >/dev/null 2>&1 \
       && info "已还原 $name（来自备份）" \
       || { err "还原 $name 失败"; exit 5; }
   else
-    # 从镜像原版取
     if docker run --rm --entrypoint cat "$IMAGE" "$cont" > "$tmpd/$name" 2>/dev/null \
        && [ -s "$tmpd/$name" ]; then
       docker cp "$tmpd/$name" "$CONTAINER:$cont" >/dev/null 2>&1 \
@@ -139,6 +167,13 @@ for pair in "${PAIRS[@]}"; do
   fi
 done
 
+# --- 删除高级设置页与注入器 ---------------------------------------------------
+info "删除高级设置页与注入器..."
+docker exec "$CONTAINER" rm -rf "$CONT_ADV_DIR" >/dev/null 2>&1 \
+  && info "  已删 $CONT_ADV_DIR" || warn "  删除 $CONT_ADV_DIR 失败（可能本就不存在）"
+docker exec "$CONTAINER" rm -f "$CONT_ENTRY_JS" >/dev/null 2>&1 \
+  && info "  已删 $CONT_ENTRY_JS" || warn "  删除 $CONT_ENTRY_JS 失败（可能本就不存在）"
+
 docker exec "$CONTAINER" python -m py_compile \
   "$CONT_MUSIC_LIB" "$CONT_MUSIC_ROUTER" "$CONT_DEVICE_PLAYER" "$CONT_XIAOMUSIC" >/dev/null 2>&1 \
   && info "容器内语法检查通过。" \
@@ -148,6 +183,6 @@ info "重启容器..."
 docker restart "$CONTAINER" >/dev/null 2>&1 || { err "docker restart 失败"; exit 8; }
 
 info "回滚完成。"
-info "验证：curl -s http://<host>:<端口>/api/music-mgr/albums 应返回 404（补丁已移除）。"
+info "验证：curl -s http://<host>:58090/api/music-mgr/albums 应返回 404（补丁已移除）。"
 info "如需再次使用，重跑 ./patch_music_manager.sh；若也要时长功能，另跑 duration-refresh 的补丁。"
 exit 0

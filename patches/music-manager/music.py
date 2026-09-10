@@ -2,6 +2,7 @@
 
 import base64
 import json
+import os
 import urllib.parse
 
 from fastapi import (
@@ -493,3 +494,90 @@ async def music_mgr_is_auto(album: str = Query(...)):
         "album": album,
         "auto": xiaomusic.music_library.is_auto_album(album),
     }
+
+
+# ---- cow music-manager 补丁：高级播放设置 ---------------------------------
+#
+# 设置文件 <music_mgr_dir>/settings.json，全局一份（不分设备）。
+# 每个设备各自有一份进程内缓存，所以写完之后要让所有设备的缓存都失效，
+# 否则改了开关得重启才生效。
+
+
+def _adv_settings_path():
+    try:
+        base = xiaomusic.music_library._music_mgr_dir()
+    except Exception:
+        base = "/app/conf/music-mgr"
+    return os.path.join(base, "settings.json")
+
+
+def _read_adv_settings_raw():
+    path = _adv_settings_path()
+    data = {
+        "auto_play_type_all": False,
+        "auto_play_type_one": False,
+        "silent_switch_tts": False,
+    }
+    try:
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
+                raw = json.load(f)
+            if isinstance(raw, dict):
+                for k in data:
+                    if k in raw:
+                        data[k] = bool(raw[k])
+                # 旧版合并键迁移（同 device_player.get_adv_settings 的规则）
+                if (
+                    "auto_play_type" in raw
+                    and "auto_play_type_all" not in raw
+                    and "auto_play_type_one" not in raw
+                ):
+                    legacy = bool(raw["auto_play_type"])
+                    data["auto_play_type_all"] = legacy
+                    data["auto_play_type_one"] = legacy
+    except Exception as e:
+        log.warning(f"cow: 读取高级播放设置失败: {e}")
+    return data
+
+
+def _write_adv_settings_raw(data):
+    path = _adv_settings_path()
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, path)
+    return path
+
+
+def _invalidate_all_adv_settings():
+    for dev in xiaomusic.device_manager.devices.values():
+        try:
+            dev.invalidate_adv_settings()
+        except Exception as e:
+            log.warning(f"cow: 清设置缓存失败: {e}")
+
+
+@router.get("/api/music-mgr/adv-play-settings")
+async def music_mgr_get_adv_settings():
+    """读高级播放设置（cow music-manager 补丁）"""
+    return {"ret": "OK", "settings": _read_adv_settings_raw()}
+
+
+@router.post("/api/music-mgr/adv-play-settings")
+async def music_mgr_set_adv_settings(request: Request):
+    """写高级播放设置（cow music-manager 补丁）
+
+    body: {"auto_play_type_all": true, "auto_play_type_one": false,
+           "silent_switch_tts": false}
+    只接受已知字段；未传的字段保持原值。
+    """
+    data = await _read_json_body(request)
+    cur = _read_adv_settings_raw()
+    for k in cur:
+        if k in data:
+            cur[k] = bool(data[k])
+    path = _write_adv_settings_raw(cur)
+    _invalidate_all_adv_settings()
+    log.info(f"cow: 高级播放设置已更新 {cur} -> {path}")
+    return {"ret": "OK", "settings": cur}
