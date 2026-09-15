@@ -108,6 +108,12 @@ cd patches/music-manager/
 
 ---
 
+## v1.0.2 变更
+
+修正网页从“所有歌曲”中点选单曲时的播放模式。现在只要请求里指定了歌曲，就按单曲处理并使用 `auto_play_type_one`；只有未指定歌曲、且播放的是具体歌单时，才使用 `auto_play_type_all`。
+
+“全部”“所有歌曲”“所有电台”作为总列表播放时不会强制改掉当前模式。
+
 ## 补丁改了什么
 
 补丁是**四个完整文件**（不是 diff），覆盖到容器对应位置。
@@ -141,7 +147,7 @@ cd patches/music-manager/
 - `play_music_list` —— 修「播放歌单X」误下载。未指定歌名时校验记忆值是否属于
   该歌单，不属于则丢弃并回退到 `_play_list[0]`，且 `allow_download=False`。
   空歌单直接拒绝播放，不再退化成拿 `cur_music` 去网络搜索下载。
-  另：播放歌单时按 `auto_play_type_all` 自动切列表循环。
+  另：播放歌单时按 `auto_play_type_all` 自动切列表循环；从“全部”“所有歌曲”“所有电台”中指定一首歌时，按单曲处理，不会被总列表覆盖。
 - `play` —— 播放单曲时按 `auto_play_type_one` 自动切单曲循环。
 - `get_adv_settings` / `invalidate_adv_settings` / `_auto_switch_play_type` ——
   高级播放设置的读取（含进程内缓存与旧键迁移）与自动切换逻辑。
