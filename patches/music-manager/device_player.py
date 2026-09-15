@@ -1312,11 +1312,11 @@ class XiaoMusicDevice:
         # 切换歌单，强制重新洗牌
         self.update_playlist(force_reshuffle=True)
 
-        # 指定某首歌时，即使来源列表是“所有歌曲”，也按播放单曲处理。
-        # 只有从头播放具体歌单时，才自动切到列表循环；特殊总列表不覆盖用户模式。
-        if music_name:
+        # 总列表中指定某首歌，按播放单曲处理；具体歌单中点某首歌，仍按歌单处理。
+        total_lists = ("全部", "所有歌曲", "所有电台")
+        if list_name in total_lists and music_name:
             await self._auto_switch_play_type(PLAY_TYPE_ONE, f"播放单曲【{music_name}】")
-        elif list_name not in ("全部", "所有歌曲", "所有电台"):
+        elif list_name not in total_lists:
             await self._auto_switch_play_type(PLAY_TYPE_ALL, f"播放歌单【{list_name}】")
 
         # cow: 修复「播放歌单X」误播/误下载。
